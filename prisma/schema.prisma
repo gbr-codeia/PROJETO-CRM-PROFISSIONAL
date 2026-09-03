@@ -1,0 +1,315 @@
+// ─────────────────────────────────────────────────────────────
+// EDITFLOW CRM — Prisma schema
+// PostgreSQL. Prepared for Supabase (DIRECT_URL for migrations).
+// ─────────────────────────────────────────────────────────────
+
+generator client {
+  provider      = "prisma-client-js"
+  // "native" for local dev; "rhel-openssl-3.0.x" is the Vercel serverless runtime.
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ─────────────────────────── Enums ──────────────────────────
+
+enum ProjectStatus {
+  NEW
+  WAITING_MATERIAL
+  EDITING
+  REVIEW
+  ADJUSTMENTS
+  DELIVERED
+  CANCELLED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+/// Payment status of a project or a financial record.
+enum PaymentStatus {
+  PENDING
+  PARTIAL
+  PAID
+}
+
+enum FinancialType {
+  INCOME
+  EXPENSE
+}
+
+enum FinancialStatus {
+  PENDING
+  PARTIAL
+  PAID
+  CANCELLED
+}
+
+enum ActivityAction {
+  CLIENT_CREATED
+  CLIENT_UPDATED
+  CLIENT_DELETED
+  PROJECT_CREATED
+  PROJECT_UPDATED
+  PROJECT_MOVED
+  PROJECT_DELIVERED
+  PROJECT_CANCELLED
+  PROJECT_REOPENED
+  PROJECT_DELETED
+  KANBAN_COLUMN_CREATED
+  KANBAN_COLUMN_UPDATED
+  KANBAN_COLUMN_DELETED
+  FINANCIAL_CREATED
+  FINANCIAL_UPDATED
+  FINANCIAL_CANCELLED
+  FINANCIAL_DELETED
+  PAYMENT_REGISTERED
+  PAYMENT_DELETED
+}
+
+// ─────────────────────────── Models ─────────────────────────
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String?
+  image        String?
+  emailVerified DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  accounts         Account[]
+  sessions         Session[]
+  clients          Client[]
+  projects         Project[]
+  kanbanColumns    KanbanColumn[]
+  financialRecords FinancialRecord[]
+  activities       Activity[]
+
+  @@map("users")
+}
+
+// ─── Auth.js adapter tables (kept minimal, credentials-first) ─
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ─────────────────────────── Clients ────────────────────────
+
+model Client {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  companyName String?
+  email       String?
+  phone       String?
+  whatsapp    String?
+  instagram   String?
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projects         Project[]
+  financialRecords FinancialRecord[]
+
+  @@index([userId])
+  @@index([userId, name])
+  @@map("clients")
+}
+
+// ─────────────────────────── Projects ───────────────────────
+
+model Project {
+  id            String        @id @default(cuid())
+  userId        String
+  clientId      String
+  title         String
+  description   String?
+  projectType   String?
+  value         Decimal       @default(0) @db.Decimal(12, 2)
+  entryDate     DateTime      @default(now())
+  deadline      DateTime?
+  deliveredAt   DateTime?
+  completedAt   DateTime?
+  status        ProjectStatus @default(NEW)
+  priority      Priority      @default(MEDIUM)
+  paymentStatus PaymentStatus @default(PENDING)
+  paymentMethod String?
+  /// Optional color tag (hex) shown on the Kanban card.
+  color         String?
+  notes         String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  client           Client            @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  kanban           ProjectKanban?
+  financialRecords FinancialRecord[]
+  activities       Activity[]
+
+  @@index([userId])
+  @@index([userId, status])
+  @@index([userId, clientId])
+  @@index([userId, deliveredAt])
+  @@map("projects")
+}
+
+// ─────────────────────── Kanban (flexible) ──────────────────
+
+model KanbanColumn {
+  id                String   @id @default(cuid())
+  userId            String
+  name              String
+  slug              String
+  position          Int
+  color             String?
+  /// When a project lands on a column flagged as "delivered",
+  /// the Kanban → Financial automation fires.
+  isDeliveredColumn Boolean  @default(false)
+  isDefault         Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user  User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cards ProjectKanban[]
+
+  @@unique([userId, slug])
+  @@index([userId, position])
+  @@map("kanban_columns")
+}
+
+model ProjectKanban {
+  id        String   @id @default(cuid())
+  projectId String   @unique
+  columnId  String
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  column  KanbanColumn @relation(fields: [columnId], references: [id], onDelete: Restrict)
+
+  @@index([columnId, position])
+  @@map("project_kanban")
+}
+
+// ─────────────────────── Financial records ──────────────────
+
+model FinancialRecord {
+  id            String          @id @default(cuid())
+  userId        String
+  projectId     String?
+  clientId      String?
+  type          FinancialType
+  category      String
+  description   String
+  amount        Decimal         @db.Decimal(12, 2)
+  /// Denormalized sum of related payments (kept in sync by the service layer).
+  paidAmount    Decimal         @default(0) @db.Decimal(12, 2)
+  status        FinancialStatus @default(PENDING)
+  dueDate       DateTime?
+  paidAt        DateTime?
+  referenceMonth Int
+  referenceYear  Int
+  paymentMethod String?
+  notes         String?
+  /// True when the record was generated by the Kanban → Financial automation.
+  autoGenerated Boolean         @default(false)
+  /// Guarantees a single auto-generated INCOME record per project (nullable unique = many NULLs allowed).
+  autoSourceProjectId String?   @unique
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project  Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  client   Client?   @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  payments Payment[]
+
+  @@index([userId])
+  @@index([userId, type])
+  @@index([userId, status])
+  @@index([userId, referenceYear, referenceMonth])
+  @@index([projectId])
+  @@map("financial_records")
+}
+
+model Payment {
+  id                String   @id @default(cuid())
+  financialRecordId String
+  amount            Decimal  @db.Decimal(12, 2)
+  paymentDate       DateTime @default(now())
+  paymentMethod     String?
+  notes             String?
+  createdAt         DateTime @default(now())
+
+  financialRecord FinancialRecord @relation(fields: [financialRecordId], references: [id], onDelete: Cascade)
+
+  @@index([financialRecordId])
+  @@map("payments")
+}
+
+// ─────────────────────── Activity history ───────────────────
+
+model Activity {
+  id          String         @id @default(cuid())
+  userId      String
+  projectId   String?
+  action      ActivityAction
+  description String
+  metadata    Json?
+  createdAt   DateTime       @default(now())
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([projectId])
+  @@map("activities")
+}

@@ -1,0 +1,10 @@
+# Never ship local-only files to Vercel
+.env
+.env.*
+!.env.example
+node_modules
+.next
+/private
+scripts/verify-flow.ts
+/prisma/*.db
+*.tsbuildinfo

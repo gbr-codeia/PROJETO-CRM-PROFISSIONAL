@@ -1,0 +1,83 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  * {
+    border-color: theme("colors.line.DEFAULT");
+  }
+
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    background-color: theme("colors.background");
+    color: theme("colors.content.DEFAULT");
+    font-feature-settings: "cv11", "ss01";
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Ambient turquoise glow behind the app shell */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background:
+      radial-gradient(60rem 40rem at 12% -10%, rgba(30, 217, 182, 0.06), transparent 60%),
+      radial-gradient(50rem 40rem at 100% 0%, rgba(30, 217, 182, 0.04), transparent 55%);
+  }
+
+  ::selection {
+    background: rgba(30, 217, 182, 0.28);
+    color: #fff;
+  }
+}
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: #2c2c2c transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: #2c2c2c;
+    border-radius: 999px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: #3a3a3a;
+  }
+
+  .card-surface {
+    background-color: theme("colors.surface.DEFAULT");
+    border: 1px solid theme("colors.line.DEFAULT");
+    border-radius: theme("borderRadius.2xl");
+  }
+
+  .glow-border {
+    border-color: theme("colors.line.accent");
+  }
+
+  .text-gradient-primary {
+    background: linear-gradient(180deg, #ffffff 0%, #7ff0dc 130%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+}
+
+/* Recharts: remove focus outlines on chart surfaces */
+.recharts-surface:focus,
+.recharts-wrapper:focus {
+  outline: none;
+}
