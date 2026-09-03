@@ -1,10 +1,12 @@
-# Never ship local-only files to Vercel
 .env
-.env.*
-!.env.example
+.env.local
+.env.development
+.env.development.local
+.env.production
+.env.production.local
 node_modules
 .next
+.git
+.vscode
 /private
-scripts/verify-flow.ts
-/prisma/*.db
 *.tsbuildinfo

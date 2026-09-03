@@ -1,124 +1,140 @@
 # Deploy na Vercel — do zero
 
 > O EDITFLOW CRM precisa de um **PostgreSQL hospedado** (não serve o Postgres da
-> sua máquina). Sem isso, ou sem as variáveis de ambiente, a Vercel devolve
-> **500 / erro interno**.
+> sua máquina). Sem isso, ou sem as variáveis de ambiente cadastradas **na Vercel**,
+> o deploy quebra.
 
-O projeto **já está preparado**:
+---
 
-- `build` = `prisma generate && prisma migrate deploy && next build` → as tabelas
-  são criadas no banco de produção automaticamente no primeiro deploy.
-- `prisma/schema.prisma` com `binaryTargets` incluindo o runtime da Vercel.
-- `.vercelignore` + `.gitignore` garantem que `.env`, `node_modules` e `.next`
-  nunca sobem.
+## ⚠️ Se seu build falhou com `P1001 ... 127.0.0.1:5432`
+
+O log mostrava algo como:
+
+```
+Variáveis de ambiente carregadas do arquivo .env
+Fonte de dados "db": ... em "127.0.0.1:5432"
+Erro: P1001: Não foi possível acessar o servidor de banco de dados em `127.0.0.1:5432`
+```
+
+Duas coisas aconteceram:
+
+1. **Um arquivo `.env` foi enviado no deploy** (com o endereço `127.0.0.1` da sua
+   máquina). Isso só acontece quando o deploy **não** vem de um repositório Git
+   limpo — normalmente `vercel` CLI enviando a pasta inteira.
+2. **As variáveis de ambiente não estavam cadastradas na Vercel**, então o Prisma
+   usou o `.env` enviado.
+
+**Correção definitiva → faça o deploy pelo GitHub** (o `.env` está no `.gitignore`
+e nunca entra no repositório) e **cadastre as variáveis na Vercel antes de fazer
+o deploy**. Passos abaixo.
+
+> O `build` já **não** acessa mais o banco (`prisma generate && next build`).
+> As migrations você roda **uma vez, à parte** (Passo 4).
 
 ---
 
 ## Passo 1 — Banco PostgreSQL (grátis)
 
-Escolha um:
-
 ### Supabase
 1. Crie um projeto em supabase.com.
-2. *Project Settings → Database* → copie **dois** URLs:
-   - **Connection pooling** (porta `6543`) → será o `DATABASE_URL`.
+2. *Project Settings → Database*, copie **dois** URLs:
+   - **Connection pooling** (porta `6543`) → `DATABASE_URL`.
      Acrescente ao final: `?pgbouncer=true&connection_limit=1`
-   - **Direct connection** (porta `5432`) → será o `DIRECT_URL`.
+   - **Direct connection** (porta `5432`) → `DIRECT_URL`.
 
-### Neon  /  Vercel Postgres
+### Neon / Vercel Postgres
 - Um único connection string. Use **o mesmo valor** em `DATABASE_URL` e `DIRECT_URL`.
 
 ---
 
-## Passo 2 — Subir o código
+## Passo 2 — Subir para o GitHub
 
-### Opção A — GitHub (recomendado)
+O repositório Git já está inicializado (sem o `.env`).
 
 ```bash
 cd "PROJETO CRM PROFISSIONAL"
-git init
-git add -A
-git commit -m "EDITFLOW CRM"
-git branch -M main
-# crie um repo vazio no GitHub e:
+# crie um repositório VAZIO no GitHub (sem README), e:
 git remote add origin https://github.com/SEU_USUARIO/editflow-crm.git
 git push -u origin main
 ```
 
-Na Vercel: **Add New → Project → Import** o repositório. Framework: *Next.js*
-(detectado). **Não faça o primeiro deploy ainda** — configure as variáveis
-(Passo 3) e só então "Deploy".
-
-### Opção B — Vercel CLI
-
-```bash
-npm i -g vercel
-cd "PROJETO CRM PROFISSIONAL"
-vercel            # cria o projeto (responda as perguntas, aceite os padrões)
-# configure as variáveis (Passo 3) e então:
-vercel --prod
-```
+Confirme no GitHub que **não existe** um arquivo `.env` no repositório.
 
 ---
 
-## Passo 3 — Variáveis de ambiente na Vercel
+## Passo 3 — Projeto na Vercel + variáveis
 
-*Project → Settings → Environment Variables* — marque **Production** e **Preview**:
+1. Se você já tem um projeto "editflow" quebrado na Vercel, **apague-o**
+   (*Settings → Advanced → Delete Project*) — ele tem o `.env` velho embutido.
+2. **Add New → Project → Import** o repositório do GitHub. Framework: *Next.js*
+   (detectado sozinho). **NÃO clique em Deploy ainda.**
+3. Abra **Environment Variables** e cadastre (marque **Production** e **Preview**):
 
 | Nome | Valor |
 |------|-------|
 | `DATABASE_URL` | URL do banco (Supabase: pooler `:6543` + `?pgbouncer=true&connection_limit=1`) |
-| `DIRECT_URL` | URL direto (Supabase: `:5432`; Neon/Vercel PG: igual ao `DATABASE_URL`) |
-| `AUTH_SECRET` | resultado de `openssl rand -base64 32` |
+| `DIRECT_URL` | URL direto `:5432` (Neon/Vercel PG: **igual** ao `DATABASE_URL`) |
+| `AUTH_SECRET` | saída de `openssl rand -base64 32` |
 | `AUTH_TRUST_HOST` | `true` |
-| `NEXTAUTH_URL` | `https://SEU-PROJETO.vercel.app` (ajuste depois do 1º deploy se o domínio mudar) |
+| `NEXTAUTH_URL` | `https://SEU-PROJETO.vercel.app` |
 
-As três de baixo **também** são necessárias — não pule.
+4. Agora clique em **Deploy**.
 
 ---
 
-## Passo 4 — Deploy
+## Passo 4 — Criar as tabelas no banco (uma vez)
 
-- GitHub: clique **Deploy** (ou faça um `git push`).
-- CLI: `vercel --prod`.
+Rode da sua máquina, apontando para o banco de **produção**:
 
-O build roda `prisma migrate deploy` e cria todas as tabelas. Ao abrir a URL:
-vá em **/login → "Criar conta"** e comece a usar.
+```bash
+cd "PROJETO CRM PROFISSIONAL"
+DATABASE_URL="<URL_DIRETA_DE_PRODUCAO>" DIRECT_URL="<URL_DIRETA_DE_PRODUCAO>" \
+  npx prisma migrate deploy
+```
+
+Saída esperada: `2 migrations ... applied`.
 
 ### (Opcional) dados de demonstração
 
-Rodando da sua máquina, apontando para o banco de produção:
-
 ```bash
-DATABASE_URL="<url_direta_de_producao>" DIRECT_URL="<url_direta_de_producao>" npm run db:seed
+DATABASE_URL="<URL_DIRETA_DE_PRODUCAO>" DIRECT_URL="<URL_DIRETA_DE_PRODUCAO>" \
+  npm run db:seed
 # login: editor@editflow.dev / editflow123
 ```
 
+Se não rodar o seed, é só abrir a URL → **/login → "Criar conta"**.
+
 ---
 
-## Se der erro — leia os logs
+## Passo 5 — Abrir
 
-**Vercel → Deployment → Logs**. Correspondência:
+`https://SEU-PROJETO.vercel.app` → `/login`. Pronto.
+
+Sempre que fizer `git push`, a Vercel refaz o deploy. Rode o Passo 4 de novo
+**só quando criar novas migrations**.
+
+---
+
+## Tabela de erros (Vercel → Deployment → Logs)
 
 | Log | Causa | Correção |
 |-----|-------|----------|
+| `P1001 ... 127.0.0.1:5432` + `carregadas do arquivo .env` | `.env` local foi para o deploy e não há variável na Vercel | deploy pelo **GitHub** + cadastrar variáveis (Passos 2–3) |
 | `Environment variable not found: DATABASE_URL` / `DIRECT_URL` | variável não cadastrada | Passo 3 |
-| `Can't reach database server at 127.0.0.1` | `DATABASE_URL` local | use o URL do banco hospedado |
-| `Can't reach database server` (outro host) | banco pausado / IP bloqueado | ative o projeto no Supabase; permita conexões |
-| `relation "users" does not exist` | migrations não aplicadas | garanta que o build rodou `prisma migrate deploy` (já está no script) |
-| `MissingSecret` / `Please define a secret` | `AUTH_SECRET` ausente | Passo 3 |
+| `P1001` (outro host) | banco pausado / bloqueado | ative o projeto no Supabase; libere conexões |
+| `relation "users" does not exist` | migrations não aplicadas | Passo 4 (`prisma migrate deploy`) |
+| `MissingSecret` / `MIDDLEWARE_INVOCATION_FAILED` | `AUTH_SECRET` ausente | Passo 3 |
 | `Query engine ... could not be found` | binário Prisma | já resolvido (`binaryTargets`); refaça o deploy |
-| `too many connections` / `sorry, too many clients` | conexões diretas em serverless | `DATABASE_URL` tem que ser o **pooler** (Supabase `:6543`) |
-| `MIDDLEWARE_INVOCATION_FAILED` | quase sempre `AUTH_SECRET` ausente | Passo 3 |
+| `too many connections` | conexões diretas em serverless | `DATABASE_URL` tem que ser o **pooler** (`:6543`) |
 
 ---
 
 ## Checklist
 
-- [ ] Banco PostgreSQL hospedado criado e ativo
-- [ ] `DATABASE_URL` **não** aponta para `localhost`
-- [ ] `DIRECT_URL` cadastrada (mesmo valor do `DATABASE_URL` se o provedor não separa)
-- [ ] `AUTH_SECRET`, `AUTH_TRUST_HOST`, `NEXTAUTH_URL` cadastradas
-- [ ] Variáveis marcadas para **Production** e **Preview**
-- [ ] Deploy feito **depois** de cadastrar as variáveis
-- [ ] Consegui criar conta em `/login`
+- [ ] Banco PostgreSQL hospedado, ativo
+- [ ] Repositório no GitHub **sem** `.env`
+- [ ] Projeto Vercel importado do GitHub (o antigo, se existir, apagado)
+- [ ] 5 variáveis cadastradas (Production + Preview)
+- [ ] Deploy feito **depois** das variáveis
+- [ ] `npx prisma migrate deploy` rodado contra o banco de produção
+- [ ] `/login` abre e consigo criar conta
